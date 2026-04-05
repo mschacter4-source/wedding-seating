@@ -322,10 +322,9 @@ export default function App(){
   useEffect(()=>{try{localStorage.setItem(STORAGE_KEY,JSON.stringify(tables));}catch{}},[tables]);
   useEffect(()=>{try{localStorage.setItem(REMOVED_KEY,JSON.stringify(removed));}catch{}},[removed]);
 
+  const flash=useCallback(m=>{setToast(m);setTimeout(()=>setToast(null),2200);},[]);
   const resetAll=()=>{setTables(INIT);setRemoved([]);flash("Reset to original seating");};
 
-
-  const flash=useCallback(m=>{setToast(m);setTimeout(()=>setToast(null),2200);},[]);
   const total=tables.reduce((s,t)=>s+t.guests.length,0);
 
   const match=g=>{if(!search)return true;const t=search.toLowerCase();return g.name.toLowerCase().includes(t)||(g.note||"").toLowerCase().includes(t);};
@@ -503,4 +502,5 @@ export default function App(){
     </div>
   );
 }
+
 
