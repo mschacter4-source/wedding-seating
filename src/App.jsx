@@ -1,4 +1,11 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
+
+const STORAGE_KEY = "wedding-seating-tables";
+const REMOVED_KEY = "wedding-seating-removed";
+function loadSaved(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+  catch { return fallback; }
+}
 
 const INIT = [
   { id:"head",name:"Head Table",label:"The Wedding Party",shape:"circle",seats:8,guests:[
@@ -299,8 +306,8 @@ function AddGuestModal({tables,onAdd,onClose}){
 
 /* ═══════ MAIN ═══════ */
 export default function App(){
-  const [tables,setTables]=useState(INIT);
-  const [removed,setRemoved]=useState([]);
+  const [tables,setTables]=useState(()=>loadSaved(STORAGE_KEY, INIT));
+  const [removed,setRemoved]=useState(()=>loadSaved(REMOVED_KEY, []));
   const [drag,setDrag]=useState(null);
   const [overTbl,setOverTbl]=useState(null);
   const [search,setSearch]=useState("");
@@ -310,6 +317,13 @@ export default function App(){
   const [showAddModal,setShowAddModal]=useState(false);
   const [showRemoved,setShowRemoved]=useState(false);
   const ghostRef=useRef(null);
+
+  // Persist changes to localStorage
+  useEffect(()=>{try{localStorage.setItem(STORAGE_KEY,JSON.stringify(tables));}catch{}},[tables]);
+  useEffect(()=>{try{localStorage.setItem(REMOVED_KEY,JSON.stringify(removed));}catch{}},[removed]);
+
+  const resetAll=()=>{setTables(INIT);setRemoved([]);flash("Reset to original seating");};
+
 
   const flash=useCallback(m=>{setToast(m);setTimeout(()=>setToast(null),2200);},[]);
   const total=tables.reduce((s,t)=>s+t.guests.length,0);
@@ -364,6 +378,11 @@ export default function App(){
           onMouseEnter={e=>e.currentTarget.style.background="#7A8B6E"} onMouseLeave={e=>e.currentTarget.style.background="#8B9E7E"}>
           <span style={{fontSize:16,lineHeight:"14px"}}>+</span> Add Guest
         </button>
+        <button onClick={()=>{if(window.confirm("Reset all changes back to the original seating chart?"))resetAll();}}
+          style={{padding:"8px 18px",borderRadius:12,border:"1px solid #D4CBB8",background:"#fff",color:"#B8B0A0",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6,transition:"all 0.15s"}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor="#D4856A";e.currentTarget.style.color="#D4856A";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#D4CBB8";e.currentTarget.style.color="#B8B0A0";}}>
+          ↺ Reset
+        </button>
       </div>
 
       {/* Floor Plan */}
@@ -387,7 +406,7 @@ export default function App(){
         </div>
       </div>
       <p style={{textAlign:"center",fontSize:10,color:"#B8B0A0",padding:"3px 20px 12px",fontStyle:"italic"}}>
-        Drag guests between tables &nbsp;•&nbsp; Hover to remove &nbsp;•&nbsp; Click names to edit &nbsp;•&nbsp; Toggle ○/▭ shape
+        Drag guests between tables &nbsp;•&nbsp; Hover to remove &nbsp;•&nbsp; Click names to edit &nbsp;•&nbsp; Toggle ○/▭ shape &nbsp;•&nbsp; <span style={{color:"#9AB49E"}}>✓ Changes auto-saved</span>
       </p>
 
       {/* Trash */}
@@ -484,3 +503,4 @@ export default function App(){
     </div>
   );
 }
+
