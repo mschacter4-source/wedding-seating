@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 
 const STORAGE_KEY = "wedding-seating-tables";
 const REMOVED_KEY = "wedding-seating-removed";
+const LAYOUT_KEY = "wedding-seating-layout";
 function loadSaved(key, fallback) {
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
   catch { return fallback; }
@@ -110,69 +111,183 @@ const INIT = [
 const GC={bride:"#D4856A",groom:"#8B9E7E","bride-fam":"#D4A5A5","groom-fam":"#9AB49E","bride-fr":"#C4A8C4","groom-fr":"#8CB8D4",joint:"#C6A96C"};
 const GL={bride:"Bride",groom:"Groom","bride-fam":"Bride's Family","groom-fam":"Groom's Family","bride-fr":"Bride's Friends","groom-fr":"Groom's Friends",joint:"Joint"};
 
-/* ═══════ FLOOR PLAN ═══════ */
-function FloorPlan({tables}){
-  const half=Math.ceil(tables.length/2);
-  const left=tables.slice(0,half), right=tables.slice(half);
+/* ═══════ INTERACTIVE FLOOR PLAN ═══════ */
+function initLayout(tables){
+  const cols=4,gap=130,startX=80,startY=100;
+  const pos={};
+  // dance floor in center
+  pos["_dance"]={x:380,y:260,w:180,h:180};
+  // bar and entrance
+  pos["_bar"]={x:250,y:540,w:60,h:20};
+  pos["_entrance"]={x:450,y:540,w:70,h:20};
+  tables.forEach((t,i)=>{
+    const col=i%cols,row=Math.floor(i/cols);
+    pos[t.id]={x:startX+col*220,y:startY+row*120,w:t.shape==="rect"?80:60,h:t.shape==="rect"?40:60};
+  });
+  return pos;
+}
+
+function FloorPlan({tables,layout,onLayoutChange}){
+  const containerRef=useRef(null);
+  const [dragging,setDragging]=useState(null);  // {id, offX, offY}
+  const [resizing,setResizing]=useState(null);   // {id, startX, startY, startW, startH}
+  const [selected,setSelected]=useState(null);
+  const canvasW=920,canvasH=600;
+
+  const pos=layout;
+
+  const onMouseDown=(e,id,type)=>{
+    e.stopPropagation();e.preventDefault();
+    const rect=containerRef.current.getBoundingClientRect();
+    const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+    if(type==="move"){
+      const p=pos[id]||{x:100,y:100};
+      setDragging({id,offX:mx-p.x,offY:my-p.y});
+      setSelected(id);
+    }else if(type==="resize"){
+      const p=pos[id]||{x:100,y:100,w:60,h:60};
+      setResizing({id,startX:e.clientX,startY:e.clientY,startW:p.w,startH:p.h});
+      setSelected(id);
+    }
+  };
+
+  const onMouseMove=useCallback(e=>{
+    if(!containerRef.current)return;
+    const rect=containerRef.current.getBoundingClientRect();
+    if(dragging){
+      const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+      const np={...pos};
+      const p=np[dragging.id]||{x:0,y:0,w:60,h:60};
+      np[dragging.id]={...p,x:Math.max(0,Math.min(canvasW-20,mx-dragging.offX)),y:Math.max(0,Math.min(canvasH-20,my-dragging.offY))};
+      onLayoutChange(np);
+    }
+    if(resizing){
+      const dx=e.clientX-resizing.startX, dy=e.clientY-resizing.startY;
+      const np={...pos};
+      const p=np[resizing.id]||{x:0,y:0,w:60,h:60};
+      np[resizing.id]={...p,w:Math.max(30,resizing.startW+dx),h:Math.max(20,resizing.startH+dy)};
+      onLayoutChange(np);
+    }
+  },[dragging,resizing,pos,onLayoutChange]);
+
+  const onMouseUp=useCallback(()=>{setDragging(null);setResizing(null);},[]);
+
+  useEffect(()=>{
+    if(dragging||resizing){
+      window.addEventListener("mousemove",onMouseMove);
+      window.addEventListener("mouseup",onMouseUp);
+      return ()=>{window.removeEventListener("mousemove",onMouseMove);window.removeEventListener("mouseup",onMouseUp);};
+    }
+  },[dragging,resizing,onMouseMove,onMouseUp]);
+
+  const dancePos=pos["_dance"]||{x:380,y:260,w:180,h:180};
+  const barPos=pos["_bar"]||{x:250,y:540,w:60,h:20};
+  const entrPos=pos["_entrance"]||{x:450,y:540,w:70,h:20};
+
   return(
-    <div style={{
-      background:"linear-gradient(160deg, #F0E8D8 0%, #EDE4D2 40%, #E8DFCF 100%)",
-      borderRadius:24,padding:"32px 20px 28px",margin:"0 auto",maxWidth:1000,
-      position:"relative",overflow:"hidden",
-      boxShadow:"0 4px 20px rgba(139,158,126,0.1), inset 0 1px 0 rgba(255,255,255,0.6)",
-      border:"1px solid #DDD4C4",
-    }}>
-      {/* Soft texture */}
-      <div style={{position:"absolute",inset:0,opacity:0.04,
-        backgroundImage:"radial-gradient(circle at 25% 25%, #8B9E7E 0.5px, transparent 0.5px), radial-gradient(circle at 75% 60%, #C6A96C 0.4px, transparent 0.4px)",
-        backgroundSize:"50px 50px, 70px 70px",
-      }}/>
-      {/* Warm glow */}
-      <div style={{position:"absolute",top:"-15%",left:"50%",transform:"translateX(-50%)",width:"60%",height:"50%",borderRadius:"50%",background:"radial-gradient(ellipse, rgba(198,169,108,0.06), transparent 70%)"}}/>
-
-      {/* Title */}
-      <div style={{textAlign:"center",marginBottom:20,position:"relative",zIndex:2}}>
-        <div style={{fontFamily:"Georgia, serif",fontSize:14,color:"#8B9E7E",fontWeight:400,letterSpacing:3,textTransform:"uppercase"}}>Reception Layout</div>
-        <div style={{width:40,height:1,background:"#C6A96C55",margin:"8px auto 0"}}/>
-      </div>
-
-      {/* Layout */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,position:"relative",zIndex:2}}>
-        <div style={{display:"flex",flexDirection:"column",gap:14,alignItems:"center",flex:"0 0 auto",width:200}}>
-          {left.map(t=><FPT key={t.id} table={t}/>)}
-        </div>
-
-        {/* Dance floor */}
-        <div style={{
-          flex:"0 0 auto",width:240,height:240,borderRadius:"50%",
-          background:"radial-gradient(ellipse at 45% 40%, rgba(198,169,108,0.1), rgba(139,158,126,0.04) 60%, transparent 80%)",
-          border:"1.5px solid #C6CDB8",
-          display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-          position:"relative",
-          boxShadow:"inset 0 0 30px rgba(139,158,126,0.04)",
+    <div style={{position:"relative"}}>
+      <div ref={containerRef} onMouseDown={()=>setSelected(null)}
+        style={{
+          background:"linear-gradient(160deg, #F0E8D8 0%, #EDE4D2 40%, #E8DFCF 100%)",
+          borderRadius:24,margin:"0 auto",maxWidth:canvasW,height:canvasH,
+          position:"relative",overflow:"hidden",cursor:dragging?"grabbing":"default",
+          boxShadow:"0 4px 20px rgba(139,158,126,0.1), inset 0 1px 0 rgba(255,255,255,0.6)",
+          border:"1px solid #DDD4C4",userSelect:"none",
         }}>
-          <div style={{position:"absolute",inset:14,borderRadius:"50%",border:"1px dashed #C6CDB880"}}/>
-          <div style={{fontFamily:"Georgia, serif",fontSize:11,color:"#8B9E7E",letterSpacing:4,textTransform:"uppercase",marginBottom:4,opacity:0.6}}>Dance</div>
-          <div style={{fontFamily:"Georgia, serif",fontSize:11,color:"#8B9E7E",letterSpacing:4,textTransform:"uppercase",opacity:0.6}}>Floor</div>
-          <div style={{position:"absolute",top:10,left:"50%",transform:"translateX(-50%)",fontSize:10,opacity:0.15}}>🍂</div>
-          <div style={{position:"absolute",bottom:10,left:"50%",transform:"translateX(-50%)",fontSize:10,opacity:0.15}}>🌿</div>
+        {/* Texture */}
+        <div style={{position:"absolute",inset:0,opacity:0.04,pointerEvents:"none",
+          backgroundImage:"radial-gradient(circle at 25% 25%, #8B9E7E 0.5px, transparent 0.5px), radial-gradient(circle at 75% 60%, #C6A96C 0.4px, transparent 0.4px)",
+          backgroundSize:"50px 50px, 70px 70px",
+        }}/>
+
+        {/* Title */}
+        <div style={{textAlign:"center",padding:"14px 0 0",position:"relative",zIndex:3,pointerEvents:"none"}}>
+          <div style={{fontFamily:"Georgia, serif",fontSize:13,color:"#8B9E7E",fontWeight:400,letterSpacing:3,textTransform:"uppercase"}}>Reception Layout</div>
+          <div style={{fontSize:9,color:"#B8B0A0",marginTop:2,fontStyle:"italic"}}>Drag to move • Corner handles to resize</div>
         </div>
 
-        <div style={{display:"flex",flexDirection:"column",gap:14,alignItems:"center",flex:"0 0 auto",width:200}}>
-          {right.map(t=><FPT key={t.id} table={t}/>)}
+        {/* Dance Floor */}
+        <div onMouseDown={e=>onMouseDown(e,"_dance","move")}
+          style={{
+            position:"absolute",left:dancePos.x,top:dancePos.y,width:dancePos.w,height:dancePos.h,
+            borderRadius:"50%",cursor:dragging?.id==="_dance"?"grabbing":"grab",
+            background:"radial-gradient(ellipse at 45% 40%, rgba(198,169,108,0.12), rgba(139,158,126,0.06) 60%, transparent 80%)",
+            border:selected==="_dance"?"2px solid #C6A96C":"1.5px solid #C6CDB8",
+            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+            boxShadow:selected==="_dance"?"0 0 0 3px rgba(198,169,108,0.2), inset 0 0 30px rgba(139,158,126,0.04)":"inset 0 0 30px rgba(139,158,126,0.04)",
+            zIndex:1,transition:dragging?.id==="_dance"?"none":"box-shadow 0.2s",
+          }}>
+          <div style={{position:"absolute",inset:10,borderRadius:"50%",border:"1px dashed #C6CDB880",pointerEvents:"none"}}/>
+          <div style={{fontFamily:"Georgia, serif",fontSize:10,color:"#8B9E7E",letterSpacing:3,textTransform:"uppercase",marginBottom:2,opacity:0.6,pointerEvents:"none"}}>Dance</div>
+          <div style={{fontFamily:"Georgia, serif",fontSize:10,color:"#8B9E7E",letterSpacing:3,textTransform:"uppercase",opacity:0.6,pointerEvents:"none"}}>Floor</div>
+          {selected==="_dance"&&<div onMouseDown={e=>onMouseDown(e,"_dance","resize")}
+            style={{position:"absolute",right:-5,bottom:-5,width:10,height:10,background:"#C6A96C",borderRadius:2,cursor:"nwse-resize",border:"1px solid #fff",zIndex:5}}/>}
         </div>
-      </div>
 
-      {/* Bottom */}
-      <div style={{display:"flex",justifyContent:"center",gap:40,marginTop:22,position:"relative",zIndex:2}}>
-        <div style={{textAlign:"center"}}>
-          <div style={{width:40,height:1,background:"#B8C4A830",margin:"0 auto 6px"}}/>
-          <span style={{fontSize:8,color:"#8B9E7E80",letterSpacing:3,textTransform:"uppercase"}}>Bar</span>
+        {/* Bar */}
+        <div onMouseDown={e=>onMouseDown(e,"_bar","move")}
+          style={{position:"absolute",left:barPos.x,top:barPos.y,width:barPos.w,height:barPos.h,
+            cursor:"grab",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2,
+            border:selected==="_bar"?"1.5px solid #C6A96C":"none",borderRadius:4,
+          }}>
+          <div style={{width:"100%",height:1,background:"#B8C4A830",position:"absolute"}}/>
+          <span style={{fontSize:8,color:"#8B9E7E80",letterSpacing:3,textTransform:"uppercase",position:"relative",background:"linear-gradient(160deg, #F0E8D8, #EDE4D2)",padding:"0 4px"}}>Bar</span>
+          {selected==="_bar"&&<div onMouseDown={e=>onMouseDown(e,"_bar","resize")}
+            style={{position:"absolute",right:-5,bottom:-5,width:8,height:8,background:"#C6A96C",borderRadius:2,cursor:"nwse-resize",border:"1px solid #fff",zIndex:5}}/>}
         </div>
-        <div style={{textAlign:"center"}}>
-          <div style={{width:50,height:1,background:"#B8C4A830",margin:"0 auto 6px"}}/>
-          <span style={{fontSize:8,color:"#8B9E7E80",letterSpacing:3,textTransform:"uppercase"}}>Entrance</span>
+
+        {/* Entrance */}
+        <div onMouseDown={e=>onMouseDown(e,"_entrance","move")}
+          style={{position:"absolute",left:entrPos.x,top:entrPos.y,width:entrPos.w,height:entrPos.h,
+            cursor:"grab",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2,
+            border:selected==="_entrance"?"1.5px solid #C6A96C":"none",borderRadius:4,
+          }}>
+          <div style={{width:"100%",height:1,background:"#B8C4A830",position:"absolute"}}/>
+          <span style={{fontSize:8,color:"#8B9E7E80",letterSpacing:3,textTransform:"uppercase",position:"relative",background:"linear-gradient(160deg, #F0E8D8, #EDE4D2)",padding:"0 4px"}}>Entrance</span>
+          {selected==="_entrance"&&<div onMouseDown={e=>onMouseDown(e,"_entrance","resize")}
+            style={{position:"absolute",right:-5,bottom:-5,width:8,height:8,background:"#C6A96C",borderRadius:2,cursor:"nwse-resize",border:"1px solid #fff",zIndex:5}}/>}
         </div>
+
+        {/* Tables */}
+        {tables.map(t=>{
+          const p=pos[t.id]||{x:100,y:100,w:60,h:60};
+          const n=t.guests.length,isR=t.shape==="rect";
+          const gc={};t.guests.forEach(g=>{gc[g.group]=(gc[g.group]||0)+1;});
+          const dom=Object.entries(gc).sort((a,b)=>b[1]-a[1])[0];
+          const c=dom?GC[dom[0]]:"#8B9E7E";
+          const isSel=selected===t.id;
+          return(
+            <div key={t.id} onMouseDown={e=>onMouseDown(e,t.id,"move")}
+              style={{position:"absolute",left:p.x,top:p.y,cursor:dragging?.id===t.id?"grabbing":"grab",zIndex:isSel?4:2,
+                display:"flex",flexDirection:"column",alignItems:"center",
+                transition:dragging?.id===t.id?"none":"box-shadow 0.2s",
+              }}>
+              <div style={{position:"relative",width:p.w,height:isR?p.h:p.w}}>
+                <div style={{
+                  width:"100%",height:"100%",borderRadius:isR?6:"50%",
+                  background:`${c}18`,border:isSel?`2px solid ${c}`:`1.5px solid ${c}40`,
+                  boxShadow:isSel?`0 0 0 3px ${c}20, 0 2px 8px ${c}15`:`0 1px 6px ${c}10`,
+                  display:"flex",alignItems:"center",justifyContent:"center",position:"relative",
+                }}>
+                  <span style={{fontSize:8,color:c,fontWeight:600,opacity:0.7,pointerEvents:"none",textAlign:"center",lineHeight:1.1,padding:2}}>
+                    {n}
+                  </span>
+                  {/* Seat dots */}
+                  {!isR&&t.guests.map((g,i)=>{const a=(2*Math.PI*i)/Math.max(n,1)-Math.PI/2;const r=p.w/2+4;
+                    return(<div key={g.id} style={{position:"absolute",left:`calc(50% + ${Math.cos(a)*r}px)`,top:`calc(50% + ${Math.sin(a)*r}px)`,transform:"translate(-50%,-50%)",width:4,height:4,borderRadius:"50%",background:GC[g.group]||c,opacity:0.7,pointerEvents:"none"}}/>);
+                  })}
+                  {isR&&t.guests.map((g,i)=>{const top=i<Math.ceil(n/2);const idx=top?i:i-Math.ceil(n/2);const cnt=top?Math.ceil(n/2):n-Math.ceil(n/2);if(!cnt)return null;const sp=p.w/(cnt+1);
+                    return(<div key={g.id} style={{position:"absolute",left:sp*(idx+1),top:top?-4:p.h,transform:"translate(-50%,-50%)",width:4,height:4,borderRadius:"50%",background:GC[g.group]||c,opacity:0.7,pointerEvents:"none"}}/>);
+                  })}
+                </div>
+                {/* Resize handle */}
+                {isSel&&<div onMouseDown={e=>onMouseDown(e,t.id,"resize")}
+                  style={{position:"absolute",right:-5,bottom:-5,width:10,height:10,background:c,borderRadius:2,cursor:"nwse-resize",border:"1.5px solid #fff",zIndex:5}}/>}
+              </div>
+              <div style={{fontSize:7,color:"#7A8B6E",textAlign:"center",maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:400,letterSpacing:0.3,marginTop:2,pointerEvents:"none"}}>{t.label}</div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -207,12 +322,16 @@ function FPT({table}){
 }
 
 /* ═══════ SEAT ═══════ */
-function Seat({guest,dim,hl,search,onDragStart,onDragEnd,onRemove}){
+function Seat({guest,dim,hl,search,onDragStart,onDragEnd,onRemove,onDropOnSeat}){
   const [hover,setHover]=useState(false);
+  const [dropHl,setDropHl]=useState(false);
   return(
-    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
+    <div draggable onDragStart={onDragStart} onDragEnd={e=>{setDropHl(false);onDragEnd(e);}}
+      onDragOver={e=>{e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect="move";setDropHl(true);}}
+      onDragLeave={()=>setDropHl(false)}
+      onDrop={e=>{e.preventDefault();e.stopPropagation();setDropHl(false);if(onDropOnSeat)onDropOnSeat(guest);}}
       onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
-      style={{textAlign:"center",cursor:"grab",opacity:dim?0.18:1,transition:"opacity 0.2s",width:52,position:"relative"}}
+      style={{textAlign:"center",cursor:"grab",opacity:dim?0.18:1,transition:"opacity 0.2s, transform 0.15s",width:52,position:"relative",transform:dropHl?"scale(1.12)":"none"}}
       title={`${guest.name}${guest.note?` (${guest.note})`:""}`}>
       {hover&&onRemove&&(
         <button onClick={e=>{e.stopPropagation();onRemove(guest);}}
@@ -235,14 +354,14 @@ function Seat({guest,dim,hl,search,onDragStart,onDragEnd,onRemove}){
 }
 
 /* ═══════ TABLE VIS ═══════ */
-function RoundVis({guests,isDim,isHl,search,mkD,tid,onRemove}){
+function RoundVis({guests,isDim,isHl,search,mkD,tid,onRemove,onDropOnSeat}){
   const n=Math.max(guests.length,1);const r=Math.min(40+n*7.5,105);const tR=r-26;const sz=(r+42)*2;
   return(
     <div style={{position:"relative",width:sz,height:sz,margin:"6px auto",flexShrink:0}}>
       <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:tR*2,height:tR*2,borderRadius:"50%",background:"radial-gradient(ellipse at 40% 35%, #f3ede2, #e8e0d2)",border:"1.5px solid #d8d0c2",boxShadow:"inset 0 2px 8px rgba(0,0,0,0.03), 0 2px 8px rgba(0,0,0,0.03)"}}/>
       {guests.map((g,i)=>{const a=(2*Math.PI*i)/n-Math.PI/2;return(
         <div key={g.id} style={{position:"absolute",left:"50%",top:"50%",transform:`translate(calc(-50% + ${Math.cos(a)*r}px), calc(-50% + ${Math.sin(a)*r}px))`,zIndex:2}}>
-          <Seat guest={g} dim={isDim(g)} hl={isHl(g)} search={search} onDragStart={e=>mkD(tid).onDS(e,g)} onDragEnd={mkD(tid).onDE} onRemove={onRemove}/>
+          <Seat guest={g} dim={isDim(g)} hl={isHl(g)} search={search} onDragStart={e=>mkD(tid).onDS(e,g)} onDragEnd={mkD(tid).onDE} onRemove={onRemove} onDropOnSeat={tg=>onDropOnSeat(tid,tg)}/>
         </div>
       );})}
       {guests.length===0&&<div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",fontSize:11,color:"#B8C4A8",fontStyle:"italic"}}>Drop here</div>}
@@ -250,17 +369,17 @@ function RoundVis({guests,isDim,isHl,search,mkD,tid,onRemove}){
   );
 }
 
-function RectVis({guests,isDim,isHl,search,mkD,tid,onRemove}){
+function RectVis({guests,isDim,isHl,search,mkD,tid,onRemove,onDropOnSeat}){
   const half=Math.ceil(guests.length/2);const top=guests.slice(0,half),bot=guests.slice(half);
   const w=Math.max(Math.max(top.length,bot.length)*58+16,140);
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",margin:"6px auto",gap:0}}>
       <div style={{display:"flex",justifyContent:"center",gap:4,marginBottom:5}}>
-        {top.map(g=><Seat key={g.id} guest={g} dim={isDim(g)} hl={isHl(g)} search={search} onDragStart={e=>mkD(tid).onDS(e,g)} onDragEnd={mkD(tid).onDE} onRemove={onRemove}/>)}
+        {top.map(g=><Seat key={g.id} guest={g} dim={isDim(g)} hl={isHl(g)} search={search} onDragStart={e=>mkD(tid).onDS(e,g)} onDragEnd={mkD(tid).onDE} onRemove={onRemove} onDropOnSeat={tg=>onDropOnSeat(tid,tg)}/>)}
       </div>
       <div style={{width:w,height:26,borderRadius:7,background:"linear-gradient(145deg, #f3ede2, #e8e0d2)",border:"1.5px solid #d8d0c2",boxShadow:"inset 0 2px 8px rgba(0,0,0,0.03), 0 2px 8px rgba(0,0,0,0.03)"}}/>
       <div style={{display:"flex",justifyContent:"center",gap:4,marginTop:5}}>
-        {bot.map(g=><Seat key={g.id} guest={g} dim={isDim(g)} hl={isHl(g)} search={search} onDragStart={e=>mkD(tid).onDS(e,g)} onDragEnd={mkD(tid).onDE} onRemove={onRemove}/>)}
+        {bot.map(g=><Seat key={g.id} guest={g} dim={isDim(g)} hl={isHl(g)} search={search} onDragStart={e=>mkD(tid).onDS(e,g)} onDragEnd={mkD(tid).onDE} onRemove={onRemove} onDropOnSeat={tg=>onDropOnSeat(tid,tg)}/>)}
       </div>
       {guests.length===0&&<div style={{fontSize:11,color:"#B8C4A8",fontStyle:"italic",padding:12}}>Drop here</div>}
     </div>
@@ -308,6 +427,7 @@ function AddGuestModal({tables,onAdd,onClose}){
 export default function App(){
   const [tables,setTables]=useState(()=>loadSaved(STORAGE_KEY, INIT));
   const [removed,setRemoved]=useState(()=>loadSaved(REMOVED_KEY, []));
+  const [layout,setLayout]=useState(()=>loadSaved(LAYOUT_KEY, null));
   const [drag,setDrag]=useState(null);
   const [overTbl,setOverTbl]=useState(null);
   const [search,setSearch]=useState("");
@@ -318,12 +438,16 @@ export default function App(){
   const [showRemoved,setShowRemoved]=useState(false);
   const ghostRef=useRef(null);
 
+  // Initialize layout from tables if no saved layout
+  const currentLayout=layout||initLayout(tables);
+
   // Persist changes to localStorage
   useEffect(()=>{try{localStorage.setItem(STORAGE_KEY,JSON.stringify(tables));}catch{}},[tables]);
   useEffect(()=>{try{localStorage.setItem(REMOVED_KEY,JSON.stringify(removed));}catch{}},[removed]);
+  useEffect(()=>{if(layout){try{localStorage.setItem(LAYOUT_KEY,JSON.stringify(layout));}catch{}}},[layout]);
 
   const flash=useCallback(m=>{setToast(m);setTimeout(()=>setToast(null),2200);},[]);
-  const resetAll=()=>{setTables(INIT);setRemoved([]);flash("Reset to original seating");};
+  const resetAll=()=>{setTables(INIT);setRemoved([]);setLayout(null);try{localStorage.removeItem(LAYOUT_KEY);}catch{};flash("Reset to original seating");};
 
   const total=tables.reduce((s,t)=>s+t.guests.length,0);
 
@@ -337,10 +461,29 @@ export default function App(){
   });
   const onDOver=(e,id)=>{e.preventDefault();e.dataTransfer.dropEffect="move";setOverTbl(id);};
   const onDrop=(e,toId)=>{
-    e.preventDefault();setOverTbl(null);if(!drag||drag.from===toId)return;
+    e.preventDefault();setOverTbl(null);if(!drag)return;
     const{guest,from}=drag;
-    setTables(p=>p.map(t=>{if(t.id===from)return{...t,guests:t.guests.filter(g=>g.id!==guest.id)};if(t.id===toId)return{...t,guests:[...t.guests,guest]};return t;}));
-    flash(`${guest.name} → ${tables.find(t=>t.id===toId)?.label}`);setDrag(null);
+    if(from===toId){/* same table – move to end */
+      setTables(p=>p.map(t=>{if(t.id!==toId)return t;const gs=t.guests.filter(g=>g.id!==guest.id);return{...t,guests:[...gs,guest]};}));
+      flash(`${guest.name} moved to end`);
+    }else{
+      setTables(p=>p.map(t=>{if(t.id===from)return{...t,guests:t.guests.filter(g=>g.id!==guest.id)};if(t.id===toId)return{...t,guests:[...t.guests,guest]};return t;}));
+      flash(`${guest.name} → ${tables.find(t=>t.id===toId)?.label}`);
+    }
+    setDrag(null);
+  };
+  const onDropOnSeat=(tid,targetGuest)=>{
+    if(!drag)return;const{guest,from}=drag;if(guest.id===targetGuest.id){setDrag(null);return;}
+    setTables(p=>p.map(t=>{
+      if(from===tid&&t.id===tid){/* reorder within same table */
+        const gs=t.guests.filter(g=>g.id!==guest.id);const idx=gs.findIndex(g=>g.id===targetGuest.id);gs.splice(idx,0,guest);return{...t,guests:gs};
+      }
+      if(t.id===from)return{...t,guests:t.guests.filter(g=>g.id!==guest.id)};
+      if(t.id===tid){const gs=[...t.guests];const idx=gs.findIndex(g=>g.id===targetGuest.id);gs.splice(idx,0,guest);return{...t,guests:gs};}
+      return t;
+    }));
+    flash(from===tid?`${guest.name} reordered`:`${guest.name} → before ${targetGuest.name}`);
+    setDrag(null);
   };
   const removeGuest=guest=>{setTables(p=>p.map(t=>({...t,guests:t.guests.filter(g=>g.id!==guest.id)})));setRemoved(p=>[...p,guest]);flash(`${guest.name} removed`);};
   const restoreGuest=(guest,toId)=>{setRemoved(p=>p.filter(g=>g.id!==guest.id));setTables(p=>p.map(t=>t.id===toId?{...t,guests:[...t.guests,guest]}:t));flash(`${guest.name} restored`);};
@@ -385,7 +528,7 @@ export default function App(){
       </div>
 
       {/* Floor Plan */}
-      <div style={{padding:"0 20px 20px",maxWidth:1040,margin:"0 auto"}}><FloorPlan tables={tables}/></div>
+      <div style={{padding:"0 20px 20px",maxWidth:960,margin:"0 auto"}}><FloorPlan tables={tables} layout={currentLayout} onLayoutChange={setLayout}/></div>
 
       {/* Controls */}
       <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:8,padding:"12px 16px 2px",flexWrap:"wrap"}}>
@@ -405,7 +548,7 @@ export default function App(){
         </div>
       </div>
       <p style={{textAlign:"center",fontSize:10,color:"#B8B0A0",padding:"3px 20px 12px",fontStyle:"italic"}}>
-        Drag guests between tables &nbsp;•&nbsp; Hover to remove &nbsp;•&nbsp; Click names to edit &nbsp;•&nbsp; Toggle ○/▭ shape &nbsp;•&nbsp; <span style={{color:"#9AB49E"}}>✓ Changes auto-saved</span>
+        Drag guests between tables or onto each other to reorder &nbsp;•&nbsp; Hover to remove &nbsp;•&nbsp; Click names to edit &nbsp;•&nbsp; <span style={{color:"#9AB49E"}}>✓ Changes auto-saved</span>
       </p>
 
       {/* Trash */}
@@ -488,8 +631,8 @@ export default function App(){
                 <div style={{width:t.shape==="rect"?12:8,height:t.shape==="rect"?7:8,border:"1.5px solid #9AB49E",borderRadius:t.shape==="rect"?2:"50%"}}/>
                 {t.shape==="circle"?"Circular":t.shape==="rect"?"Rectangular":"Round"}
               </div>
-              {t.shape==="rect"?<RectVis guests={t.guests} isDim={isDim} isHl={isHl} search={search} mkD={mkD} tid={t.id} onRemove={removeGuest}/>
-                :<RoundVis guests={t.guests} isDim={isDim} isHl={isHl} search={search} mkD={mkD} tid={t.id} onRemove={removeGuest}/>}
+              {t.shape==="rect"?<RectVis guests={t.guests} isDim={isDim} isHl={isHl} search={search} mkD={mkD} tid={t.id} onRemove={removeGuest} onDropOnSeat={onDropOnSeat}/>
+                :<RoundVis guests={t.guests} isDim={isDim} isHl={isHl} search={search} mkD={mkD} tid={t.id} onRemove={removeGuest} onDropOnSeat={onDropOnSeat}/>}
             </div>
           );
         })}
@@ -502,5 +645,3 @@ export default function App(){
     </div>
   );
 }
-
-
