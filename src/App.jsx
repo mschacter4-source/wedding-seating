@@ -475,14 +475,18 @@ export default function App(){
   const onDropOnSeat=(tid,targetGuest)=>{
     if(!drag)return;const{guest,from}=drag;if(guest.id===targetGuest.id){setDrag(null);return;}
     setTables(p=>p.map(t=>{
-      if(from===tid&&t.id===tid){/* reorder within same table */
-        const gs=t.guests.filter(g=>g.id!==guest.id);const idx=gs.findIndex(g=>g.id===targetGuest.id);gs.splice(idx,0,guest);return{...t,guests:gs};
+      if(from===tid&&t.id===tid){/* swap within same table — only 2 people move */
+        const gs=[...t.guests];
+        const fromIdx=gs.findIndex(g=>g.id===guest.id);
+        const toIdx=gs.findIndex(g=>g.id===targetGuest.id);
+        gs[fromIdx]=targetGuest;gs[toIdx]=guest;
+        return{...t,guests:gs};
       }
       if(t.id===from)return{...t,guests:t.guests.filter(g=>g.id!==guest.id)};
       if(t.id===tid){const gs=[...t.guests];const idx=gs.findIndex(g=>g.id===targetGuest.id);gs.splice(idx,0,guest);return{...t,guests:gs};}
       return t;
     }));
-    flash(from===tid?`${guest.name} reordered`:`${guest.name} → before ${targetGuest.name}`);
+    flash(from===tid?`${guest.name} ↔ ${targetGuest.name}`:`${guest.name} → before ${targetGuest.name}`);
     setDrag(null);
   };
   const removeGuest=guest=>{setTables(p=>p.map(t=>({...t,guests:t.guests.filter(g=>g.id!==guest.id)})));setRemoved(p=>[...p,guest]);flash(`${guest.name} removed`);};
